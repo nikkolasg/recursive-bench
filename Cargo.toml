@@ -1,0 +1,16 @@
+[package]
+name = "recursive-bench"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+plonky2 = "0.1"
+plonky2_crypto = "0.1"
+
+[dev-dependencies]
+hex = "0.4"
+
+[patch.crates-io]
+plonky2_crypto = { git = "https://github.com/nikkolasg/plonky2-crypto" } 
