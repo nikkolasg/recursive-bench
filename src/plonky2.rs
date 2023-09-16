@@ -10,31 +10,18 @@ pub trait Sha256Circuit<F: RichField + Extendable<D>, const D: usize> {
 
 impl<F: RichField + Extendable<D>, const D: usize> Sha256Circuit<F, D> for CircuitBuilder<F, D> {
     fn sha256(&mut self, input: &HashInputTarget) -> HashOutputTarget {
-        // build the circuit for the first sha256
-        let output1 = self.hash_sha256(input);
-
-        // add an input target for the second sha256
-        let input2 = self.add_virtual_hash_input_target(1, 512);
-
-        // wire output1 to input2
-        self.connect_hash_input(&input2, &output1, 0);
-
-        // add a constant padding, since we know that output1 is 256-bit
-        self.sha256_input_padding(&input2, 256);
-
-        // build the circuit for the second sha256 and return the output
-        self.hash_sha256(&input2)
+        self.hash_sha256(input)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use hex;
     use plonky2::iop::witness::PartialWitness;
     use plonky2::plonk::circuit_builder::CircuitBuilder;
     use plonky2::plonk::circuit_data::CircuitConfig;
     use plonky2::plonk::config::*;
     use plonky2_crypto::hash::sha256::WitnessHashSha2;
+    use sha2::{digest::Update, Digest, Sha256};
     use std::time::{Duration, Instant};
 
     use super::*;
@@ -42,16 +29,8 @@ mod tests {
     #[test]
     fn test_double_sha256() {
         let tests = [
-            [
                 // 64 bytes input
                 "600D54000000000000000000000000000000000000000000000000000000000077F1040000000000000000000000000000000000000000000000000000000000",
-                // sha256(sha256(input))
-                "29ee05d175e91556b92d7c17919d42247a53096f5b58250faa3ca6ad5cbcefa7",
-            ],
-            // [
-            //     "...",
-            //     "...",
-            // ],
         ];
 
         const D: usize = 2;
@@ -73,8 +52,8 @@ mod tests {
         // 2. generate multiple ZKPs, one per test
         let mut time_prove = Duration::new(0, 0);
         for t in tests {
-            let input = hex::decode(t[0]).unwrap();
-            let output = hex::decode(t[1]).unwrap();
+            let input = hex::decode(t).unwrap();
+            let output = Sha256::new().chain(input.clone()).finalize();
 
             // set input/output
             let mut pw = PartialWitness::new();
@@ -91,7 +70,7 @@ mod tests {
         }
         time_prove /= tests.len() as u32;
         println!(
-            "double_sha256 num_gates={num_gates} time_build={time_build:?} time_prove={time_prove:?}"
+            "single_sha256 num_gates={num_gates} time_build={time_build:?} time_prove={time_prove:?}"
         );
     }
 }

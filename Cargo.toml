@@ -9,8 +9,10 @@ edition = "2021"
 plonky2 = "0.1"
 plonky2_crypto = "0.1"
 
+
 [dev-dependencies]
 hex = "0.4"
+sha2 = "0.10"
 
 [patch.crates-io]
 plonky2_crypto = { git = "https://github.com/nikkolasg/plonky2-crypto" } 
