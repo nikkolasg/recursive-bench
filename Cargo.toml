@@ -8,11 +8,15 @@ edition = "2021"
 [dependencies]
 plonky2 = "0.1"
 plonky2_crypto = "0.1"
+eyre = "0.6.8"
+sha2 = "0.10"
 
+# forced imports from plonky2
+log = { version = "0.4.14", default-features = false }
+anyhow = { version = "1.0.40", default-features = false }
 
 [dev-dependencies]
 hex = "0.4"
-sha2 = "0.10"
 
 [patch.crates-io]
 plonky2_crypto = { git = "https://github.com/nikkolasg/plonky2-crypto" } 
