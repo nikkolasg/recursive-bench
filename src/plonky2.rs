@@ -170,11 +170,14 @@ mod tests {
     #[test]
     fn test_sha_recursion() -> Result<()> {
         // we generate a first proof to verify
-        // TODO: find the "empty proof" equivalence ?
+        // TODO: Should be a satisfying empty proof to mimick IVC style - idk if it exists in plonky2 yet
         let input1 = hex::decode("600D54000000000000000000000000000000000000000000000000000000000077F1040000000000000000000000000000000000000000000000000000000000").unwrap();
         let config = CircuitConfig::standard_recursion_config();
         let inner = generate_sha256_proof::<F, C, D>(&config, input1.clone())?;
         // now we can start recursively create proof that (a) verify previous proof and (b) compute sha256 iteration
+        // NOTE TODO: currently this doesn't link any input / output. For our purpose (benchmark), I'm ok to stop there
+        // as I lack familiarity with the codebase to truly make it nice. For any serious implementation this
+        // of course should be done absolutely, because currently, IT IS NOT SECURE.
         let lvl1 = recursive_sha::<F, C, C, D>(&inner, &config, input1.clone())?;
         let lvl2 = recursive_sha::<F, C, C, D>(&lvl1, &config, input1.clone())?;
         let lvl3 = recursive_sha::<F, C, C, D>(&lvl2, &config, input1.clone())?;
