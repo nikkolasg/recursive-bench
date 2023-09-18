@@ -4,7 +4,9 @@ use plonky2::field::extension::Extendable;
 use plonky2::hash::hash_types::RichField;
 use plonky2::iop::witness::{PartialWitness, WitnessWrite};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
-use plonky2::plonk::circuit_data::{CircuitConfig, CommonCircuitData, VerifierOnlyCircuitData};
+use plonky2::plonk::circuit_data::{
+    CircuitConfig, CircuitData, CommonCircuitData, VerifierOnlyCircuitData,
+};
 use plonky2::plonk::config::{AlgebraicHasher, GenericConfig};
 use plonky2::plonk::proof::ProofWithPublicInputs;
 use plonky2::plonk::prover::prove;
@@ -16,11 +18,7 @@ use sha2::{digest::Update, Digest, Sha256};
 use std::time::{Duration, Instant};
 
 // Helper type to hold the structure needed during recursion
-type ProofTuple<F, C, const D: usize> = (
-    ProofWithPublicInputs<F, C, D>,
-    VerifierOnlyCircuitData<C, D>,
-    CommonCircuitData<F, D>,
-);
+type ProofTuple<F, C, const D: usize> = (ProofWithPublicInputs<F, C, D>, CircuitData<F, C, D>);
 pub trait Sha256Circuit<F: RichField + Extendable<D>, const D: usize> {
     fn sha256(&mut self, input: &HashInputTarget) -> HashOutputTarget;
 }
@@ -66,7 +64,7 @@ pub fn generate_sha256_proof<
 
     // verify proof
     debug_assert!(data.verify(proof.clone()).is_ok());
-    Ok((proof, data.verifier_only, data.common))
+    Ok((proof, data))
 }
 
 fn recursive_proof<
@@ -82,17 +80,18 @@ where
     // Need to ensure we can efficiently compute the hash inside the circuit
     InnerC::Hasher: AlgebraicHasher<F>,
 {
-    let (inner_proof, inner_vd, inner_cd) = inner;
+    let (inner_proof, data) = inner;
+    let (inner_vd, inner_cd) = (&data.verifier_only, &data.common);
     let mut builder = CircuitBuilder::<F, D>::new(config.clone());
-    let pt = builder.add_virtual_proof_with_pis(inner_cd);
+    let pt = builder.add_virtual_proof_with_pis(&inner_cd);
     let inner_data = builder.add_virtual_verifier_data(inner_cd.config.fri_config.cap_height);
-    builder.verify_proof::<InnerC>(&pt, &inner_data, inner_cd);
+    builder.verify_proof::<InnerC>(&pt, &inner_data, &inner_cd);
     builder.print_gate_counts(0);
     let data = builder.build::<C>();
 
     let mut pw = PartialWitness::new();
     pw.set_proof_with_pis_target(&pt, inner_proof);
-    pw.set_verifier_data_target(&inner_data, inner_vd);
+    pw.set_verifier_data_target(&inner_data, &inner_vd);
 
     let mut timing = Instant::now();
     let mut tree = TimingTree::new("prove", Level::Debug);
@@ -101,10 +100,10 @@ where
 
     debug_assert!(data.verify(proof.clone()).is_ok());
 
-    Ok((proof, data.verifier_only, data.common))
+    Ok((proof, data))
 }
 
-fn recursive_sha<
+pub fn recursive_sha<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     InnerC: GenericConfig<D, F = F>,
@@ -113,17 +112,27 @@ fn recursive_sha<
     inner: &ProofTuple<F, InnerC, D>,
     config: &CircuitConfig,
     input: Vec<u8>,
+    verification_degree: usize,
 ) -> Result<ProofTuple<F, C, D>>
 where
     // Need to ensure we can efficiently compute the hash inside the circuit
     InnerC::Hasher: AlgebraicHasher<F>,
 {
-    let (inner_proof, inner_vd, inner_cd) = inner;
+    let (inner_proof, data) = inner;
+    let (inner_vd, inner_cd) = (&data.verifier_only, &data.common);
+
     let mut builder = CircuitBuilder::<F, D>::new(config.clone());
-    // 1. verify previous proof
-    let pt = builder.add_virtual_proof_with_pis(inner_cd);
-    let inner_data = builder.add_virtual_verifier_data(inner_cd.config.fri_config.cap_height);
-    builder.verify_proof::<InnerC>(&pt, &inner_data, inner_cd);
+    // 1. verify previous proofS
+    let pts_and_inner_datas: Vec<(_, _)> = (0..verification_degree)
+        .map(|_| {
+            let pt = builder.add_virtual_proof_with_pis(inner_cd);
+            let inner_data =
+                builder.add_virtual_verifier_data(inner_cd.config.fri_config.cap_height);
+            builder.verify_proof::<InnerC>(&pt, &inner_data, inner_cd);
+            (pt, inner_data)
+        })
+        .collect::<Vec<_>>();
+
     builder.print_gate_counts(0);
     // 2. compute sha256
     let target_input = builder.add_virtual_hash_input_target(2, 512);
@@ -133,8 +142,10 @@ where
 
     let mut pw = PartialWitness::new();
     // connect proof verification inputs
-    pw.set_proof_with_pis_target(&pt, inner_proof);
-    pw.set_verifier_data_target(&inner_data, inner_vd);
+    pts_and_inner_datas.iter().for_each(|(pt, inner_data)| {
+        pw.set_proof_with_pis_target(pt, inner_proof);
+        pw.set_verifier_data_target(inner_data, inner_vd);
+    });
 
     // connect sha256 inputs
     let output = Sha256::new().chain(input.clone()).finalize();
@@ -148,7 +159,8 @@ where
 
     debug_assert!(data.verify(proof.clone()).is_ok());
 
-    Ok((proof, data.verifier_only, data.common))
+    //Ok(((proof, data.verifier_only, data.common),data))
+    Ok((proof, data))
 }
 
 #[cfg(test)]
@@ -178,9 +190,11 @@ mod tests {
         // NOTE TODO: currently this doesn't link any input / output. For our purpose (benchmark), I'm ok to stop there
         // as I lack familiarity with the codebase to truly make it nice. For any serious implementation this
         // of course should be done absolutely, because currently, IT IS NOT SECURE.
-        let lvl1 = recursive_sha::<F, C, C, D>(&inner, &config, input1.clone())?;
-        let lvl2 = recursive_sha::<F, C, C, D>(&lvl1, &config, input1.clone())?;
-        let lvl3 = recursive_sha::<F, C, C, D>(&lvl2, &config, input1.clone())?;
+        // custom chain 1 plonk.V --> 3 plonk.V --> 1 plonk.V
+        let lvl1 = recursive_sha::<F, C, C, D>(&inner, &config, input1.clone(), 1)?;
+        let lvl2 = recursive_sha::<F, C, C, D>(&lvl1, &config, input1.clone(), 2)?;
+        let lvl3 = recursive_sha::<F, C, C, D>(&lvl2, &config, input1.clone(), 1)?;
+
         Ok(())
     }
 

@@ -6,17 +6,36 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+## Plonky2 part
 plonky2 = "0.1"
 plonky2_crypto = "0.1"
 eyre = "0.6.8"
 sha2 = "0.10"
-
 # forced imports from plonky2
 log = { version = "0.4.14", default-features = false }
 anyhow = { version = "1.0.40", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive", "rc"] }
+hex = "0.4"
+# csv = "1.2.2"
+csv = { git = "https://github.com/gootorov/rust-csv", branch = "serde-flatten" }
+
+
+## Nova part
+nova-snark = { git = "https://github.com/microsoft/nova" }
+ff = { version = "0.13.0", features = ["derive"] }
+neptune = { version = "11.0.0", default-features = false }
+generic-array = "0.14"
+pasta_curves = { version = "0.5", features = ["repr-c", "serde"] }
+bellpepper-core = { version="0.2.0", default-features = false }
+bellpepper = "0.2.1"
+flate2 = "1.0"
+bincode = "1.3"
+clap = { version = "4.4.4", features = ["derive"] }
 
 [dev-dependencies]
-hex = "0.4"
+criterion = {version = "0.3", features = ["html_reports"]}
+
 
 [patch.crates-io]
 plonky2_crypto = { git = "https://github.com/nikkolasg/plonky2-crypto" } 
+# csv = { git = "https://github.com/gootorov/rust-csv", branch = "serde-flatten" }
