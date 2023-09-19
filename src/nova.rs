@@ -1,9 +1,14 @@
+#[cfg(arecibo)]
+use arecibo as nova_snark;
 use bellpepper::gadgets::Assignment;
 use bellpepper_core::{num::AllocatedNum, ConstraintSystem, SynthesisError};
 use eyre::Result;
 use ff::PrimeField as Scalar;
 use generic_array::typenum::U2;
 use neptune::poseidon::PoseidonConstants;
+#[cfg(default)]
+use nova_snark;
+
 use nova_snark::traits::circuit::StepCircuit;
 
 #[derive(Clone)]
