@@ -89,6 +89,11 @@ pub fn plonky_recursion_benchmark(p: BenchParams) -> Result<BenchResult> {
     Ok(res)
 }
 
+#[cfg(default)]
+use nova_snark;
+#[cfg(arecibo)]
+use arecibo as nova_snark;
+
 use flate2::{write::ZlibEncoder, Compression};
 use recursive_bench::nova as novuit;
 type G1 = pasta_curves::pallas::Point;
