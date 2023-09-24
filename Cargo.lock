@@ -169,35 +169,11 @@ checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 [[package]]
 name = "bellpepper"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0271a107b5f600ee41bdafbb3c8ddf4afa52983d4b078917d89dbb920116e987"
-dependencies = [
- "bellpepper-core 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "byteorder",
- "ff",
-]
-
-[[package]]
-name = "bellpepper"
-version = "0.2.1"
 source = "git+https://github.com/lurk-lab/bellpepper?branch=dev#039ac9739fc52e63eed3d4a21143923d13b41071"
 dependencies = [
- "bellpepper-core 0.2.1 (git+https://github.com/lurk-lab/bellpepper?branch=dev)",
+ "bellpepper-core",
  "byteorder",
  "ff",
-]
-
-[[package]]
-name = "bellpepper-core"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2c9a1b2f748c59938bc72165ebdf34efffeecee9cfbe0bb7d6b01aea21cd523"
-dependencies = [
- "blake2s_simd 1.0.2",
- "byteorder",
- "ff",
- "serde",
- "thiserror",
 ]
 
 [[package]]
@@ -1139,8 +1115,8 @@ version = "11.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7eaa7f90368545907dce7d5652a78f96a77d1e97019b230edbf54ce2440d5698"
 dependencies = [
- "bellpepper 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "bellpepper-core 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bellpepper",
+ "bellpepper-core",
  "blake2s_simd 0.5.11",
  "blstrs 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder",
@@ -1160,8 +1136,8 @@ source = "git+https://github.com/lurk-lab/neptune?branch=dev#67baefb7b7da0d216af
 dependencies = [
  "abomonation",
  "abomonation_derive",
- "bellpepper 0.2.1 (git+https://github.com/lurk-lab/bellpepper?branch=dev)",
- "bellpepper-core 0.2.1 (git+https://github.com/lurk-lab/bellpepper?branch=dev)",
+ "bellpepper",
+ "bellpepper-core",
  "blake2s_simd 1.0.2",
  "blstrs 0.7.1 (git+https://github.com/lurk-lab/blstrs.git?branch=dev)",
  "byteorder",
@@ -1181,8 +1157,8 @@ source = "git+https://github.com/lurk-lab/arecibo#b22df46c89ef843c84575968b72ccc
 dependencies = [
  "abomonation",
  "abomonation_derive",
- "bellpepper 0.2.1 (git+https://github.com/lurk-lab/bellpepper?branch=dev)",
- "bellpepper-core 0.2.1 (git+https://github.com/lurk-lab/bellpepper?branch=dev)",
+ "bellpepper",
+ "bellpepper-core",
  "bincode",
  "bitvec",
  "byteorder",
@@ -1220,8 +1196,8 @@ name = "nova-snark"
 version = "0.23.0"
 source = "git+https://github.com/microsoft/nova#200b47edab190c06a44cbd87a63d34a444184a41"
 dependencies = [
- "bellpepper 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "bellpepper-core 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bellpepper",
+ "bellpepper-core",
  "bincode",
  "bitvec",
  "byteorder",
@@ -1699,8 +1675,8 @@ name = "recursive-bench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bellpepper 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "bellpepper-core 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bellpepper",
+ "bellpepper-core",
  "bincode",
  "clap 4.4.4",
  "criterion",

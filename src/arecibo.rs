@@ -5,7 +5,7 @@ use ff::PrimeField as Scalar;
 use generic_array::typenum::U2;
 use neptune::poseidon::PoseidonConstants;
 
-use nova_snark::traits::circuit::StepCircuit;
+use arecibo::traits::circuit::StepCircuit;
 
 #[derive(Clone)]
 pub struct HashChainCircuit<S: Scalar> {
@@ -168,7 +168,7 @@ mod test {
     type C1 = HashChainCircuit<<G1 as Group>::Scalar>;
     type C2 = TrivialTestCircuit<<G2 as Group>::Scalar>;
 
-    use nova_snark::{
+    use arecibo::{
         traits::{circuit::TrivialTestCircuit, Group},
         PublicParams, RecursiveSNARK,
     };
@@ -181,7 +181,8 @@ mod test {
         let first_step = chain.entry(0).unwrap();
         let primary_circuit = HashChainCircuit::new(first_step.clone());
         let secondary_circuit = TrivialTestCircuit::default();
-        let pp = PublicParams::<G1, G2, C1, C2>::setup(&primary_circuit, &secondary_circuit);
+        let pp =
+            PublicParams::<G1, G2, C1, C2>::new(&primary_circuit, &secondary_circuit, None, None);
 
         let z0_primary = vec![F1::from(first_step.index), first_step.input];
         let z0_secondary = vec![F2::from(2)];

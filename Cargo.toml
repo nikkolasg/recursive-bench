@@ -21,8 +21,8 @@ csv = { git = "https://github.com/gootorov/rust-csv", branch = "serde-flatten" }
 
 
 ## Nova part
-nova-snark = { git = "https://github.com/microsoft/nova", optional = true }
-arecibo = { git = "https://github.com/lurk-lab/arecibo", package = "nova-snark", optional = true }
+nova-snark = { git = "https://github.com/microsoft/nova" }
+arecibo = { git = "https://github.com/lurk-lab/arecibo", package = "nova-snark"}
 ff = { version = "0.13.0", features = ["derive"] }
 neptune = { version = "11.0.0", default-features = false }
 generic-array = "0.14"
@@ -41,7 +41,5 @@ criterion = {version = "0.3", features = ["html_reports"]}
 plonky2_crypto = { git = "https://github.com/nikkolasg/plonky2-crypto" } 
 # csv = { git = "https://github.com/gootorov/rust-csv", branch = "serde-flatten" }
 pasta_curves = { git = "https://github.com/lurk-lab/pasta_curves", branch = "dev" }
-
-[features]
-default = ["dep:nova-snark"]
-arecibo = ["dep:arecibo"]
+bellpepper-core = { git="https://github.com/lurk-lab/bellpepper", branch="dev", default-features = false }
+bellpepper = { git="https://github.com/lurk-lab/bellpepper", branch="dev", default-features = false }

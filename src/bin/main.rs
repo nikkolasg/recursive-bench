@@ -1,4 +1,5 @@
 use anyhow::Result;
+use flate2::{write::ZlibEncoder, Compression};
 use plonky2::plonk::{
     circuit_data::CircuitConfig,
     config::{GenericConfig, PoseidonGoldilocksConfig},
@@ -18,6 +19,7 @@ pub enum Backend {
     #[default]
     Plonky,
     Nova,
+    Arecibo,
 }
 
 #[derive(Clone, Default, serde::Serialize)]
@@ -89,99 +91,192 @@ pub fn plonky_recursion_benchmark(p: BenchParams) -> Result<BenchResult> {
     Ok(res)
 }
 
-#[cfg(default)]
-use nova_snark;
-#[cfg(arecibo)]
-use arecibo as nova_snark;
+// UGLY: how to make it nice by just changing imports ?  Need to make a macro
+mod arecibo {
+    use super::*;
+    type G1 = pasta_curves::pallas::Point;
+    type F1 = pasta_curves::pallas::Scalar;
+    type G2 = pasta_curves::vesta::Point;
+    type F2 = pasta_curves::vesta::Scalar;
 
-use flate2::{write::ZlibEncoder, Compression};
-use recursive_bench::nova as novuit;
-type G1 = pasta_curves::pallas::Point;
-type F1 = pasta_curves::pallas::Scalar;
-type G2 = pasta_curves::vesta::Point;
-type F2 = pasta_curves::vesta::Scalar;
+    type C1 = recursive_bench::arecibo::HashChainCircuit<<G1 as Group>::Scalar>;
+    use recursive_bench::arecibo::{HashChain, HashChainCircuit};
 
-type C1 = novuit::HashChainCircuit<<G1 as Group>::Scalar>;
-type C2 = TrivialTestCircuit<<G2 as Group>::Scalar>;
-
-use nova_snark::{
-    traits::{circuit::TrivialTestCircuit, Group},
-    PublicParams, RecursiveSNARK,
-};
-
-pub fn nova_recursion_benchmark(p: BenchParams) -> Result<BenchResult> {
-    let mut res = BenchResult {
-        params: p.clone(),
-        ..BenchResult::default()
+    type C2 = ::arecibo::traits::circuit::TrivialTestCircuit<<G2 as Group>::Scalar>;
+    use ::arecibo::{
+        traits::{circuit::TrivialTestCircuit, Group},
+        PublicParams, RecursiveSNARK,
     };
-    let v0 = F1::from(10);
-    let chain = novuit::HashChain::generate(v0, p.length as u64).unwrap();
-    let first_step = chain.entry(0).unwrap();
-    let primary_circuit = novuit::HashChainCircuit::new(first_step.clone());
-    let secondary_circuit = TrivialTestCircuit::default();
-    let pp = PublicParams::<G1, G2, C1, C2>::setup(&primary_circuit, &secondary_circuit);
 
-    let z0_primary = vec![F1::from(first_step.index), first_step.input];
-    let z0_secondary = vec![F2::from(2)];
+    pub fn recursion_benchmark(p: BenchParams) -> Result<BenchResult> {
+        let mut res = BenchResult {
+            params: p.clone(),
+            ..BenchResult::default()
+        };
+        let v0 = F1::from(10);
+        let chain = HashChain::generate(v0, p.length as u64).unwrap();
+        let first_step = chain.entry(0).unwrap();
+        let primary_circuit = HashChainCircuit::new(first_step.clone());
+        let secondary_circuit = TrivialTestCircuit::default();
+        let pp =
+            PublicParams::<G1, G2, C1, C2>::new(&primary_circuit, &secondary_circuit, None, None);
 
-    println!("[+] Nova: Initializing the folding structure...");
-    let start = Instant::now();
-    let mut rs = RecursiveSNARK::new(
-        &pp,
-        &primary_circuit,
-        &secondary_circuit,
-        z0_primary.clone(),
-        z0_secondary.clone(),
-    );
+        let z0_primary = vec![F1::from(first_step.index), first_step.input];
+        let z0_secondary = vec![F2::from(2)];
 
-    println!("[+] Nova: Performing {} folding steps...", p.length);
-    for i in 0..p.length {
+        println!("[+] Arecibo: Initializing the folding structure...");
         let start = Instant::now();
-        let chain_node = chain.entry(i).unwrap();
-        // we give the advice corresponding to step i
-        let circuit = novuit::HashChainCircuit::new(chain_node.clone());
-        assert!(rs
-            .prove_step(
-                &pp,
-                &circuit,
-                &secondary_circuit,
-                z0_primary.clone(),
-                z0_secondary.clone()
-            )
-            .is_ok());
-        res.recursion_time += start.elapsed();
+        let mut rs = RecursiveSNARK::new(
+            &pp,
+            &primary_circuit,
+            &secondary_circuit,
+            z0_primary.clone(),
+            z0_secondary.clone(),
+        );
+
+        println!("[+] Arecibo: Performing {} folding steps...", p.length);
+        for i in 0..p.length {
+            let start = Instant::now();
+            let chain_node = chain.entry(i).unwrap();
+            // we give the advice corresponding to step i
+            let circuit = recursive_bench::arecibo::HashChainCircuit::new(chain_node.clone());
+            assert!(rs
+                .prove_step(
+                    &pp,
+                    &circuit,
+                    &secondary_circuit,
+                    z0_primary.clone(),
+                    z0_secondary.clone()
+                )
+                .is_ok());
+            res.recursion_time += start.elapsed();
+        }
+        debug_assert!(rs.verify(&pp, p.length, &z0_primary, &z0_secondary).is_ok());
+
+        type EE1 = ::arecibo::provider::ipa_pc::EvaluationEngine<G1>;
+        type EE2 = ::arecibo::provider::ipa_pc::EvaluationEngine<G2>;
+        type S1 = ::arecibo::spartan::snark::RelaxedR1CSSNARK<G1, EE1>;
+        type S2 = ::arecibo::spartan::snark::RelaxedR1CSSNARK<G2, EE2>;
+
+        println!("[+] Arecibo: Generating final SNARK using Spartan with IPA-PC...");
+        let (pk, vk) = ::arecibo::CompressedSNARK::<_, _, _, _, S1, S2>::setup(&pp).unwrap();
+        let compressed_snark = {
+            let start = Instant::now();
+            let final_proof =
+                ::arecibo::CompressedSNARK::<_, _, _, _, S1, S2>::prove(&pp, &pk, &rs);
+            debug_assert!(final_proof.is_ok());
+            res.final_snark_time = start.elapsed();
+            final_proof.unwrap()
+        };
+        res.prover_time += start.elapsed();
+
+        println!("[+] Arecibo: Serializing a compressed version of final SNARK...");
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        bincode::serialize_into(&mut encoder, &compressed_snark).unwrap();
+        let compressed_snark_encoded = encoder.finish().unwrap();
+        res.proof_size = compressed_snark_encoded.len();
+
+        // verify the compressed SNARK
+        println!("[+] Arecibo: Verifying the final proof...");
+        let start = Instant::now();
+        let is_valid_proof = compressed_snark.verify(&vk, p.length, z0_primary, z0_secondary);
+        assert!(is_valid_proof.is_ok());
+        res.verification_time = start.elapsed();
+        Ok(res)
     }
-    debug_assert!(rs.verify(&pp, p.length, &z0_primary, &z0_secondary).is_ok());
+}
 
-    type EE1 = nova_snark::provider::ipa_pc::EvaluationEngine<G1>;
-    type EE2 = nova_snark::provider::ipa_pc::EvaluationEngine<G2>;
-    type S1 = nova_snark::spartan::snark::RelaxedR1CSSNARK<G1, EE1>;
-    type S2 = nova_snark::spartan::snark::RelaxedR1CSSNARK<G2, EE2>;
+mod nova {
+    use super::*;
+    type G1 = pasta_curves::pallas::Point;
+    type F1 = pasta_curves::pallas::Scalar;
+    type G2 = pasta_curves::vesta::Point;
+    type F2 = pasta_curves::vesta::Scalar;
 
-    println!("[+] Nova: Generating final SNARK using Spartan with IPA-PC...");
-    let (pk, vk) = nova_snark::CompressedSNARK::<_, _, _, _, S1, S2>::setup(&pp).unwrap();
-    let compressed_snark = {
-        let start = Instant::now();
-        let final_proof = nova_snark::CompressedSNARK::<_, _, _, _, S1, S2>::prove(&pp, &pk, &rs);
-        debug_assert!(final_proof.is_ok());
-        res.final_snark_time = start.elapsed();
-        final_proof.unwrap()
+    type C1 = recursive_bench::nova::HashChainCircuit<<G1 as Group>::Scalar>;
+    use recursive_bench::nova::{HashChain, HashChainCircuit};
+
+    type C2 = nova_snark::traits::circuit::TrivialTestCircuit<<G2 as Group>::Scalar>;
+    use nova_snark::{
+        traits::{circuit::TrivialTestCircuit, Group},
+        PublicParams, RecursiveSNARK,
     };
-    res.prover_time += start.elapsed();
 
-    println!("[+] Nova: Serializing a compressed version of final SNARK...");
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    bincode::serialize_into(&mut encoder, &compressed_snark).unwrap();
-    let compressed_snark_encoded = encoder.finish().unwrap();
-    res.proof_size = compressed_snark_encoded.len();
+    pub fn recursion_benchmark(p: BenchParams) -> Result<BenchResult> {
+        let mut res = BenchResult {
+            params: p.clone(),
+            ..BenchResult::default()
+        };
+        let v0 = F1::from(10);
+        let chain = HashChain::generate(v0, p.length as u64).unwrap();
+        let first_step = chain.entry(0).unwrap();
+        let primary_circuit = HashChainCircuit::new(first_step.clone());
+        let secondary_circuit = TrivialTestCircuit::default();
+        let pp = PublicParams::<G1, G2, C1, C2>::setup(&primary_circuit, &secondary_circuit);
 
-    // verify the compressed SNARK
-    println!("[+] Nova: Verifying the final proof...");
-    let start = Instant::now();
-    let is_valid_proof = compressed_snark.verify(&vk, p.length, z0_primary, z0_secondary);
-    assert!(is_valid_proof.is_ok());
-    res.verification_time = start.elapsed();
-    Ok(res)
+        let z0_primary = vec![F1::from(first_step.index), first_step.input];
+        let z0_secondary = vec![F2::from(2)];
+
+        println!("[+] Nova: Initializing the folding structure...");
+        let start = Instant::now();
+        let mut rs = RecursiveSNARK::new(
+            &pp,
+            &primary_circuit,
+            &secondary_circuit,
+            z0_primary.clone(),
+            z0_secondary.clone(),
+        );
+
+        println!("[+] Nova: Performing {} folding steps...", p.length);
+        for i in 0..p.length {
+            let start = Instant::now();
+            let chain_node = chain.entry(i).unwrap();
+            // we give the advice corresponding to step i
+            let circuit = recursive_bench::nova::HashChainCircuit::new(chain_node.clone());
+            assert!(rs
+                .prove_step(
+                    &pp,
+                    &circuit,
+                    &secondary_circuit,
+                    z0_primary.clone(),
+                    z0_secondary.clone()
+                )
+                .is_ok());
+            res.recursion_time += start.elapsed();
+        }
+        debug_assert!(rs.verify(&pp, p.length, &z0_primary, &z0_secondary).is_ok());
+
+        type EE1 = nova_snark::provider::ipa_pc::EvaluationEngine<G1>;
+        type EE2 = nova_snark::provider::ipa_pc::EvaluationEngine<G2>;
+        type S1 = nova_snark::spartan::snark::RelaxedR1CSSNARK<G1, EE1>;
+        type S2 = nova_snark::spartan::snark::RelaxedR1CSSNARK<G2, EE2>;
+
+        println!("[+] Nova: Generating final SNARK using Spartan with IPA-PC...");
+        let (pk, vk) = nova_snark::CompressedSNARK::<_, _, _, _, S1, S2>::setup(&pp).unwrap();
+        let compressed_snark = {
+            let start = Instant::now();
+            let final_proof =
+                nova_snark::CompressedSNARK::<_, _, _, _, S1, S2>::prove(&pp, &pk, &rs);
+            debug_assert!(final_proof.is_ok());
+            res.final_snark_time = start.elapsed();
+            final_proof.unwrap()
+        };
+        res.prover_time += start.elapsed();
+
+        println!("[+] Nova: Serializing a compressed version of final SNARK...");
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        bincode::serialize_into(&mut encoder, &compressed_snark).unwrap();
+        let compressed_snark_encoded = encoder.finish().unwrap();
+        res.proof_size = compressed_snark_encoded.len();
+
+        // verify the compressed SNARK
+        println!("[+] Nova: Verifying the final proof...");
+        let start = Instant::now();
+        let is_valid_proof = compressed_snark.verify(&vk, p.length, z0_primary, z0_secondary);
+        assert!(is_valid_proof.is_ok());
+        res.verification_time = start.elapsed();
+        Ok(res)
+    }
 }
 
 /// MAIN CLI PART
@@ -203,7 +298,7 @@ fn generate_experiments(args: Args) -> Vec<Experiment> {
     // [ (length , degree) ] pairs
     let params = if args.short {
         println!("--- Running the SHORT version of the benchmark ---\n");
-        vec![(3, 1)]
+        vec![(8, 1)]
     } else {
         println!("--- Running the LONG version of the benchmark ---\n");
         vec![(3, 1), (8, 1), (15, 1), (20, 1)]
@@ -229,9 +324,18 @@ fn generate_experiments(args: Args) -> Vec<Experiment> {
                     length,
                     degree,
                 },
-                bench: nova_recursion_benchmark,
+                bench: nova::recursion_benchmark,
             };
-            [plonky_exp, nova_exp]
+            let arecibo_exp = Experiment {
+                params: BenchParams {
+                    backend: Backend::Arecibo,
+                    length,
+                    degree,
+                },
+                bench: arecibo::recursion_benchmark,
+            };
+
+            [plonky_exp, nova_exp, arecibo_exp]
         })
         .collect::<Vec<_>>()
 }
